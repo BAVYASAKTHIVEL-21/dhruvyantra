@@ -67,20 +67,32 @@ Instead of managing individual APIs, DhruvYantra leverages Coral to:
 
 ```text
 Student Onboarding
-        ↓
-Profile Stored in Notion
-        ↓
-Personalized Study Plan
-        ↓
-Calendar Scheduling
-        ↓
-AI Mentor Guidance
-        ↓
-Resource Retrieval
-        ↓
-Telegram Notifications
-        ↓
-Mission Control Dashboard
+          ↓
+Coral
+          ↓
+Notion (Profile & Study Preferences)
+          ↓
+Personalized Study Plan Creation
+          ↓
+Coral
+          ↓
+Google Calendar Scheduling
+          ↓
+Mission Control & Deep Focus
+          ↓
+Coral
+          ↓
+OpenRouter AI Mentor Guidance
+          ↓
+Coral
+          ↓
+Google Drive Resource Access
+          ↓
+Coral
+          ↓
+Telegram Alerts & Parent Updates
+          ↓
+Continuous Learning Feedback Loop
 ```
 
 ---
