@@ -1,0 +1,78 @@
+name: notion_writes
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Create Notion pages via SQL-triggered POST (DhruvYantra study plans / resources).
+inputs:
+  NOTION_API_KEY:
+    kind: secret
+    hint: Integration token from Notion
+  NOTION_VERSION:
+    kind: variable
+    default: "2022-06-28"
+base_url: https://api.notion.com
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.NOTION_API_KEY}}
+request_headers:
+  - name: Notion-Version
+    from: template
+    template: "{{input.NOTION_VERSION}}"
+  - name: Content-Type
+    from: literal
+    value: application/json
+test_queries:
+  - SELECT id FROM notion_writes.page_creates WHERE database_id = 'test' AND properties_json = '{}' LIMIT 1
+tables:
+  - name: page_creates
+    description: Create a Notion database page via SQL query
+    guide: |
+      `SELECT id, created_time FROM notion_writes.page_creates
+       WHERE database_id = '<db-uuid>'
+         AND properties_json = '{"Task":{"title":[{"text":{"content":"Hello"}}]}}'
+       LIMIT 1`
+    filters:
+      - name: database_id
+        required: true
+      - name: properties_json
+        required: true
+    request:
+      method: POST
+      path: /v1/pages
+      body:
+        format: text
+        content:
+          from: template
+          template: >-
+            {"parent":{"database_id":"{{filter.database_id}}"},"properties":{{filter.properties_json}}}
+    response:
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: database_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: database_id}
+      - name: properties_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: properties_json}
+      - name: id
+        type: Utf8
+        nullable: false
+        expr: {kind: path, path: [id]}
+      - name: created_time
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [created_time]}
+      - name: raw
+        type: Json
+        nullable: false
+        expr: {kind: current_row}

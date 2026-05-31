@@ -1,0 +1,202 @@
+name: telegram
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query Telegram Bot API metadata and updates (DhruvYantra Parent Connect).
+  Sends go through the Coral gateway (sendMessage is not SQL).
+inputs:
+  TELEGRAM_BOT_TOKEN:
+    kind: secret
+    hint: |
+      Bot token from @BotFather. Parent chat id goes in TELEGRAM_PARENT_CHAT_ID
+      in .env.local (used by gateway sends, not this source).
+base_url: https://api.telegram.org
+test_queries:
+  - SELECT id, username, first_name FROM telegram.me LIMIT 1
+tables:
+  - name: me
+    description: Authenticated bot profile (getMe)
+    guide: Singleton — verify the bot token is valid.
+    request:
+      method: GET
+      path: /bot{{input.TELEGRAM_BOT_TOKEN}}/getMe
+    response:
+      ok_path:
+        - ok
+      rows_path:
+        - result
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: id
+        type: Int64
+        nullable: false
+        description: Bot user id
+        expr: {kind: path, path: [id]}
+      - name: is_bot
+        type: Boolean
+        nullable: true
+        description: Always true for bots
+        expr: {kind: path, path: [is_bot]}
+      - name: first_name
+        type: Utf8
+        nullable: true
+        description: Bot display name
+        expr: {kind: path, path: [first_name]}
+      - name: username
+        type: Utf8
+        nullable: true
+        description: Bot @username without @
+        expr: {kind: path, path: [username]}
+      - name: can_join_groups
+        type: Boolean
+        nullable: true
+        expr: {kind: path, path: [can_join_groups]}
+      - name: supports_inline_queries
+        type: Boolean
+        nullable: true
+        expr: {kind: path, path: [supports_inline_queries]}
+
+  - name: chats
+    description: Chat metadata (getChat) — verify parent chat id
+    guide: |
+      Requires `chat_id`. Example:
+      `SELECT id, type, title FROM telegram.chats WHERE chat_id = '123456789'`
+    filters:
+      - name: chat_id
+        required: true
+    request:
+      method: GET
+      path: /bot{{input.TELEGRAM_BOT_TOKEN}}/getChat
+      query:
+        - name: chat_id
+          from: filter
+          key: chat_id
+    response:
+      ok_path:
+        - ok
+      rows_path:
+        - result
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: chat_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        description: Chat id from filter
+        expr: {kind: from_filter, key: chat_id}
+      - name: id
+        type: Int64
+        nullable: true
+        description: Chat id from API
+        expr: {kind: path, path: [id]}
+      - name: type
+        type: Utf8
+        nullable: true
+        description: private, group, supergroup, channel
+        expr: {kind: path, path: [type]}
+      - name: title
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [title]}
+      - name: username
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [username]}
+      - name: first_name
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [first_name]}
+
+  - name: updates
+    description: Recent bot updates (getUpdates)
+    guide: Optional `limit` filter (default 10). Read-only inbox for agents.
+    filters:
+      - name: limit
+        required: false
+    request:
+      method: GET
+      path: /bot{{input.TELEGRAM_BOT_TOKEN}}/getUpdates
+      query:
+        - name: limit
+          from: filter
+          key: limit
+    response:
+      ok_path:
+        - ok
+      rows_path:
+        - result
+    pagination:
+      mode: none
+    columns:
+      - name: update_id
+        type: Int64
+        nullable: false
+        expr: {kind: path, path: [update_id]}
+      - name: message
+        type: Json
+        nullable: true
+        expr: {kind: path, path: [message]}
+      - name: edited_message
+        type: Json
+        nullable: true
+        expr: {kind: path, path: [edited_message]}
+
+  - name: message_sends
+    description: Send a text message via SQL-triggered POST (sendMessage)
+    guide: |
+      Example:
+      `SELECT ok, message_id FROM telegram.message_sends
+       WHERE chat_id = '123456789' AND text_json = '\"Hello parent\"' LIMIT 1`
+    filters:
+      - name: chat_id
+        required: true
+      - name: text_json
+        required: true
+    request:
+      method: POST
+      path: /bot{{input.TELEGRAM_BOT_TOKEN}}/sendMessage
+      headers:
+        - name: Content-Type
+          from: literal
+          value: application/json
+      body:
+        format: text
+        content:
+          from: template
+          template: '{"chat_id":"{{filter.chat_id}}","text":{{filter.text_json}}}'
+    response:
+      ok_path:
+        - ok
+      rows_path:
+        - result
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: chat_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: chat_id}
+      - name: text_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: text_json}
+      - name: ok
+        type: Boolean
+        nullable: false
+        expr: {kind: literal, value: true}
+      - name: message_id
+        type: Int64
+        nullable: true
+        expr: {kind: path, path: [message_id]}
+      - name: raw
+        type: Json
+        nullable: false
+        expr: {kind: current_row}

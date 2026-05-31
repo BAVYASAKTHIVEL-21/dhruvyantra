@@ -1,0 +1,13 @@
+{
+  "name": "dhruvyantra-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run scripts from ./shared (Next.js app lives there)",
+  "scripts": {
+    "dev": "npm run dev --prefix shared",
+    "build": "npm run build --prefix shared",
+    "start": "npm run start --prefix shared",
+    "lint": "npm run lint --prefix shared",
+    "install:app": "npm install --prefix shared"
+  }
+}

@@ -1,0 +1,111 @@
+name: google_drive
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query files in a Google Drive folder (DhruvYantra Vault). Requires folder_id
+  filter on every query.
+inputs:
+  GOOGLE_ACCESS_TOKEN:
+    kind: secret
+    hint: |
+      OAuth access token (refreshed by DhruvYantra before Coral SQL). Use
+      service account or GOOGLE_DRIVE_REFRESH_TOKEN in .env.local.
+base_url: https://www.googleapis.com
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GOOGLE_ACCESS_TOKEN}}
+request_headers:
+  - name: Accept
+    from: literal
+    value: application/json
+test_queries:
+  - SELECT id, name FROM google_drive.files WHERE folder_id = 'test' LIMIT 1
+tables:
+  - name: files
+    description: Files in a shared Drive folder (Vault)
+    guide: |
+      Requires `folder_id` (GOOGLE_DRIVE_FOLDER_ID). Example:
+      `SELECT id, name, mime_type FROM google_drive.files WHERE folder_id = '...'`
+    filters:
+      - name: folder_id
+        required: true
+    request:
+      method: GET
+      path: /drive/v3/files
+      query:
+        - name: q
+          from: template
+          template: "'{{filter.folder_id}}' in parents and trashed = false"
+        - name: fields
+          from: literal
+          value: "files(id,name,mimeType,webViewLink,webContentLink,size,modifiedTime),nextPageToken"
+        - name: orderBy
+          from: literal
+          value: modifiedTime desc
+        - name: pageSize
+          from: literal
+          value: "100"
+        - name: supportsAllDrives
+          from: literal
+          value: "true"
+        - name: includeItemsFromAllDrives
+          from: literal
+          value: "true"
+    response:
+      rows_path:
+        - files
+    pagination:
+      mode: cursor_query
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
+    columns:
+      - name: folder_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        description: Folder ID from the required folder_id filter
+        expr: {kind: from_filter, key: folder_id}
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Drive file ID
+        expr: {kind: path, path: [id]}
+      - name: name
+        type: Utf8
+        nullable: true
+        description: File name
+        expr: {kind: path, path: [name]}
+      - name: mime_type
+        type: Utf8
+        nullable: true
+        description: MIME type
+        expr: {kind: path, path: [mimeType]}
+      - name: web_view_link
+        type: Utf8
+        nullable: true
+        description: Browser view URL
+        expr: {kind: path, path: [webViewLink]}
+      - name: web_content_link
+        type: Utf8
+        nullable: true
+        description: Direct download URL
+        expr: {kind: path, path: [webContentLink]}
+      - name: size
+        type: Utf8
+        nullable: true
+        description: File size in bytes (string from API)
+        expr: {kind: path, path: [size]}
+      - name: modified_time
+        type: Utf8
+        nullable: true
+        description: Last modified time (RFC3339)
+        expr: {kind: path, path: [modifiedTime]}

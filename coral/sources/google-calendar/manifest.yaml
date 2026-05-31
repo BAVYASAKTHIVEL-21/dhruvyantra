@@ -1,0 +1,204 @@
+name: google_calendar
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query events on a Google Calendar (DhruvYantra planner / focus sync).
+  Requires calendar_id filter on every query.
+inputs:
+  GOOGLE_ACCESS_TOKEN:
+    kind: secret
+    hint: |
+      OAuth access token from GOOGLE_REFRESH_TOKEN (refreshed by DhruvYantra
+      before Coral SQL).
+base_url: https://www.googleapis.com
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GOOGLE_ACCESS_TOKEN}}
+request_headers:
+  - name: Accept
+    from: literal
+    value: application/json
+test_queries:
+  - SELECT id, summary FROM google_calendar.events WHERE calendar_id = 'primary' LIMIT 1
+tables:
+  - name: events
+    description: Calendar events (singleEvents expanded)
+    guide: |
+      Requires `calendar_id` (usually primary or GOOGLE_CALENDAR_ID). Optional
+      `private_extended_property` e.g. dhruvyantraTaskId=task-123 for upsert lookup.
+    filters:
+      - name: calendar_id
+        required: true
+      - name: private_extended_property
+        required: false
+    request:
+      method: GET
+      path: /calendar/v3/calendars/{{filter.calendar_id}}/events
+      query:
+        - name: singleEvents
+          from: literal
+          value: "true"
+        - name: privateExtendedProperty
+          from: filter
+          key: private_extended_property
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: cursor_query
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+      page_size:
+        default: 250
+        max: 250
+        query_param: maxResults
+    columns:
+      - name: calendar_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        description: Calendar ID from filter
+        expr: {kind: from_filter, key: calendar_id}
+      - name: id
+        type: Utf8
+        nullable: true
+        description: Event ID
+        expr: {kind: path, path: [id]}
+      - name: summary
+        type: Utf8
+        nullable: true
+        description: Event title
+        expr: {kind: path, path: [summary]}
+      - name: description
+        type: Utf8
+        nullable: true
+        description: Event description
+        expr: {kind: path, path: [description]}
+      - name: html_link
+        type: Utf8
+        nullable: true
+        description: Google Calendar web link
+        expr: {kind: path, path: [htmlLink]}
+      - name: start
+        type: Json
+        nullable: true
+        description: Start date/time object
+        expr: {kind: path, path: [start]}
+      - name: end
+        type: Json
+        nullable: true
+        description: End date/time object
+        expr: {kind: path, path: [end]}
+      - name: extended_properties
+        type: Json
+        nullable: true
+        description: Private extended properties (dhruvyantraTaskId)
+        expr: {kind: path, path: [extendedProperties]}
+  - name: event_creates
+    description: Create a Google Calendar event via SQL-triggered POST
+    guide: |
+      SQL-triggered POST. Required WHERE filters (JSON fragments, not column names):
+      calendar_id, summary_json, description_json, start_json, end_json,
+      task_id_json, category_json. Example:
+      `SELECT ok, event_id, html_link FROM google_calendar.event_creates
+       WHERE calendar_id = 'primary'
+         AND summary_json = '"Study block"'
+         AND start_json = '{"dateTime":"2026-05-27T09:00:00","timeZone":"Asia/Kolkata"}'
+         AND end_json = '{"dateTime":"2026-05-27T10:00:00","timeZone":"Asia/Kolkata"}'
+         AND description_json = '""'
+         AND task_id_json = '"task-1"'
+         AND category_json = '"planner"'
+       LIMIT 1`
+    filters:
+      - name: calendar_id
+        required: true
+      - name: summary_json
+        required: true
+      - name: description_json
+        required: true
+      - name: start_json
+        required: true
+      - name: end_json
+        required: true
+      - name: task_id_json
+        required: true
+      - name: category_json
+        required: true
+    request:
+      method: POST
+      path: /calendar/v3/calendars/{{filter.calendar_id}}/events
+      headers:
+        - name: Content-Type
+          from: literal
+          value: application/json
+      body:
+        format: text
+        content:
+          from: template
+          template: >-
+            {"summary":{{filter.summary_json}},"description":{{filter.description_json}},"start":{{filter.start_json}},"end":{{filter.end_json}},"extendedProperties":{"private":{"dhruvyantraTaskId":{{filter.task_id_json}},"dhruvyantraCategory":{{filter.category_json}}}}}
+    response:
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: calendar_id
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: calendar_id}
+      - name: summary_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: summary_json}
+      - name: description_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: description_json}
+      - name: start_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: start_json}
+      - name: end_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: end_json}
+      - name: task_id_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: task_id_json}
+      - name: category_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: category_json}
+      - name: ok
+        type: Boolean
+        nullable: false
+        expr: {kind: literal, value: true}
+      - name: event_id
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [id]}
+      - name: html_link
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [htmlLink]}
+      - name: error
+        type: Utf8
+        nullable: true
+        expr: {kind: literal, value: null}
+      - name: raw
+        type: Json
+        nullable: false
+        expr: {kind: current_row}

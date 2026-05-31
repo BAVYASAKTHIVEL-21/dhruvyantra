@@ -1,0 +1,85 @@
+name: dhruvyantra
+version: 0.1.0
+dsl_version: 3
+backend: jsonl
+description: >-
+  Local DhruvYantra app state (focus sessions, mock submissions) as JSONL files.
+  Writes update files on disk; reads go through Coral SQL.
+inputs:
+  DATA_DIR:
+    kind: variable
+    hint: Absolute path to JSONL data root (e.g. frontend/shared/.data/coral)
+test_queries:
+  - SELECT user_id FROM dhruvyantra.focus_active_sessions LIMIT 1
+tables:
+  - name: focus_active_sessions
+    description: Active focus timer per user (one JSONL file per user_id)
+    guide: |
+      `SELECT session_json FROM dhruvyantra.focus_active_sessions
+       WHERE user_id = '<student-id>' LIMIT 1`
+    source:
+      location: file://{{input.DATA_DIR}}/focus/active/
+      glob: "*.jsonl"
+    columns:
+      - name: user_id
+        type: Utf8
+        nullable: false
+      - name: session_json
+        type: Utf8
+        nullable: true
+
+  - name: focus_completions
+    description: Completed focus blocks (append-only JSONL per user)
+    guide: |
+      `SELECT id, date, completed_at, mode, topic, subject, elapsed_seconds
+       FROM dhruvyantra.focus_completions
+       WHERE user_id = '<student-id>'
+       ORDER BY completed_at DESC`
+    source:
+      location: file://{{input.DATA_DIR}}/focus/completions/
+      glob: "*.jsonl"
+    columns:
+      - name: user_id
+        type: Utf8
+        nullable: false
+      - name: id
+        type: Utf8
+        nullable: false
+      - name: date
+        type: Utf8
+        nullable: false
+      - name: completed_at
+        type: Utf8
+        nullable: false
+      - name: mode
+        type: Utf8
+        nullable: false
+      - name: topic
+        type: Utf8
+        nullable: false
+      - name: subject
+        type: Utf8
+        nullable: false
+      - name: elapsed_seconds
+        type: Int64
+        nullable: false
+
+  - name: mock_submissions
+    description: Mock test submissions (full record as JSON per row)
+    guide: |
+      `SELECT record_json FROM dhruvyantra.mock_submissions
+       WHERE user_id = '<student-id>'
+       ORDER BY submitted_at DESC`
+    source:
+      location: file://{{input.DATA_DIR}}/mock/submissions/
+      glob: "*.jsonl"
+    columns:
+      - name: user_id
+        type: Utf8
+        nullable: false
+      - name: submitted_at
+        type: Utf8
+        nullable: false
+      - name: record_json
+        type: Json
+        nullable: false

@@ -1,0 +1,163 @@
+name: openrouter
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query OpenRouter model catalog (DhruvYantra mentor / LLM agents).
+  Chat completions are exposed as SQL-triggered POST requests.
+inputs:
+  OPENROUTER_API_KEY:
+    kind: secret
+    hint: API key from https://openrouter.ai/keys
+  OPENROUTER_APP_URL:
+    kind: variable
+    default: http://localhost:3001
+    hint: Sent as HTTP-Referer on OpenRouter requests
+  OPENROUTER_APP_NAME:
+    kind: variable
+    default: DhruvYantra
+    hint: Sent as X-Title on OpenRouter requests
+base_url: https://openrouter.ai/api/v1
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.OPENROUTER_API_KEY}}
+request_headers:
+  - name: Accept
+    from: literal
+    value: application/json
+  - name: HTTP-Referer
+    from: template
+    template: "{{input.OPENROUTER_APP_URL}}"
+  - name: X-Title
+    from: template
+    template: "{{input.OPENROUTER_APP_NAME}}"
+test_queries:
+  - SELECT id, name FROM openrouter.models LIMIT 5
+tables:
+  - name: models
+    description: Available LLM models on OpenRouter
+    guide: |
+      Full catalog from GET /models. Example:
+      `SELECT id, name, context_length FROM openrouter.models WHERE id = 'openai/gpt-4o-mini'`
+    filters:
+      - name: id
+        required: false
+        mode: search
+    request:
+      method: GET
+      path: /models
+    response:
+      rows_path:
+        - data
+    pagination:
+      mode: none
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Model slug e.g. openai/gpt-4o-mini
+        expr: {kind: path, path: [id]}
+      - name: name
+        type: Utf8
+        nullable: true
+        description: Display name
+        expr: {kind: path, path: [name]}
+      - name: description
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [description]}
+      - name: context_length
+        type: Int64
+        nullable: true
+        expr: {kind: path, path: [context_length]}
+      - name: pricing
+        type: Json
+        nullable: true
+        description: Prompt/completion pricing
+        expr: {kind: path, path: [pricing]}
+      - name: top_provider
+        type: Json
+        nullable: true
+        expr: {kind: path, path: [top_provider]}
+  - name: chat_completions
+    description: Run a non-streaming OpenRouter chat completion via SQL query
+    guide: |
+      This is a SQL-triggered POST endpoint. Example:
+      `SELECT content, finish_reason FROM openrouter.chat_completions
+       WHERE operation = 'mentor.chat'
+         AND model = 'openai/gpt-4o-mini'
+         AND messages_json = '[{"role":"user","content":"Hello"}]'
+         AND temperature = '0.7'
+         AND max_tokens = '900'
+       LIMIT 1`
+    filters:
+      - name: operation
+        required: true
+      - name: model
+        required: true
+      - name: messages_json
+        required: true
+      - name: temperature
+        required: true
+      - name: max_tokens
+        required: true
+    request:
+      method: POST
+      path: /chat/completions
+      headers:
+        - name: Content-Type
+          from: literal
+          value: application/json
+      body:
+        format: text
+        content:
+          from: template
+          template: >-
+            {"model":"{{filter.model}}","messages":{{filter.messages_json}},"temperature":{{filter.temperature}},"max_tokens":{{filter.max_tokens}},"stream":false}
+    response:
+      rows_path:
+        - choices
+      row_strategy: direct
+    pagination:
+      mode: none
+    columns:
+      - name: operation
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: operation}
+      - name: model
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: model}
+      - name: messages_json
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: messages_json}
+      - name: temperature
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: temperature}
+      - name: max_tokens
+        type: Utf8
+        nullable: false
+        virtual: true
+        expr: {kind: from_filter, key: max_tokens}
+      - name: content
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [message, content]}
+      - name: finish_reason
+        type: Utf8
+        nullable: true
+        expr: {kind: path, path: [finish_reason]}
+      - name: raw
+        type: Json
+        nullable: false
+        expr: {kind: current_row}
